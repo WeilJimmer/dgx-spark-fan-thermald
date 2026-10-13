@@ -37,22 +37,18 @@ sudo apt install -y ./nvfancontrol_1.0.0_arm64.deb
 The `sha256sum -c` line must print `OK`. If it doesn't, stop and do not install.
 
 <details>
-<summary>Original release gone? Build the same package from the backup fork instead</summary>
+<summary>Original release gone? Use the identical .deb from the backup fork</summary>
 
-The fork has no release, so build the .deb from source (same commit as the original 1.0.0 release):
+Same file as the original 1.0.0 release (same sha256):
 
 ```bash
 sudo apt update
 sudo apt install -y git dkms build-essential linux-headers-$(uname -r)
-cd ~
-git clone https://github.com/WeilJimmer/dgx-spark-fan-override.git
-cd dgx-spark-fan-override
-chmod 0755 nvfancontrol/DEBIAN/postinst nvfancontrol/DEBIAN/prerm nvfancontrol/DEBIAN/postrm nvfancontrol/usr/sbin/nvfancontrol
-dpkg-deb --build --root-owner-group nvfancontrol nvfancontrol.deb
-sudo apt install -y ./nvfancontrol.deb
+cd /tmp
+wget https://github.com/WeilJimmer/dgx-spark-fan-override/releases/download/1.0.0/nvfancontrol_1.0.0_arm64.deb
+echo "c1174bc888810287a4ecc27db3a3a6fb8553a8282d0649415c5d43779f9e202c  nvfancontrol_1.0.0_arm64.deb" | sha256sum -c
+sudo apt install -y ./nvfancontrol_1.0.0_arm64.deb
 ```
-
-The `chmod` line is required: these files are not executable in git, and `dpkg-deb` refuses to build without it.
 
 </details>
 
@@ -194,22 +190,18 @@ sudo apt install -y ./nvfancontrol_1.0.0_arm64.deb
 `sha256sum -c` 那行必須印出 `OK`。沒有印出 `OK` 就停下來，不要安裝。
 
 <details>
-<summary>原作的 Release 不見了？改從備援 fork 自己打包同一個套件</summary>
+<summary>原作的 Release 不見了？改用備援 fork 上一模一樣的 .deb</summary>
 
-fork 沒有 Release，所以要從原始碼打包 .deb（和原作 1.0.0 Release 是同一個 commit）：
+和原作 1.0.0 Release 是同一個檔案（sha256 相同）：
 
 ```bash
 sudo apt update
 sudo apt install -y git dkms build-essential linux-headers-$(uname -r)
-cd ~
-git clone https://github.com/WeilJimmer/dgx-spark-fan-override.git
-cd dgx-spark-fan-override
-chmod 0755 nvfancontrol/DEBIAN/postinst nvfancontrol/DEBIAN/prerm nvfancontrol/DEBIAN/postrm nvfancontrol/usr/sbin/nvfancontrol
-dpkg-deb --build --root-owner-group nvfancontrol nvfancontrol.deb
-sudo apt install -y ./nvfancontrol.deb
+cd /tmp
+wget https://github.com/WeilJimmer/dgx-spark-fan-override/releases/download/1.0.0/nvfancontrol_1.0.0_arm64.deb
+echo "c1174bc888810287a4ecc27db3a3a6fb8553a8282d0649415c5d43779f9e202c  nvfancontrol_1.0.0_arm64.deb" | sha256sum -c
+sudo apt install -y ./nvfancontrol_1.0.0_arm64.deb
 ```
-
-`chmod` 那行不能省：這幾個檔案在 git 裡沒有執行權限，不加的話 `dpkg-deb` 會拒絕打包。
 
 </details>
 
