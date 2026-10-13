@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# Switch the EC fan override between max and auto based on the hottest
+# Linux thermal zone. Settings come from environment variables (see the
+# Environment= lines in nvfancontrol-thermald.service).
+#
+# Fail-safe rule: if no temperature can be read, request max.
+
+set -uo pipefail
+
+control_command='/usr/sbin/nvfancontrol'
+
+MAX_AT_CELSIUS="${MAX_AT_CELSIUS:-80}"
+AUTO_AT_CELSIUS="${AUTO_AT_CELSIUS:-70}"
+POLL_SECONDS="${POLL_SECONDS:-2}"
+FAILURE_BACKOFF_SECONDS="${FAILURE_BACKOFF_SECONDS:-30}"
+ZONE_TYPE_PATTERN="${ZONE_TYPE_PATTERN:-all}"
+
+# Readings outside this range are treated as broken sensors and ignored.
+plausible_min_millicelsius=-40000
+plausible_max_millicelsius=150000
+
+log() {
+    printf '%s\n' "$*" >&2
+}
+
+is_positive_integer() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+        *) [ "$1" -gt 0 ] ;;
+    esac
+}
+
+for setting in MAX_AT_CELSIUS AUTO_AT_CELSIUS POLL_SECONDS FAILURE_BACKOFF_SECONDS; do
+    if ! is_positive_integer "${!setting}"; then
+        log "Invalid $setting='${!setting}'; refusing to start."
+        exit 1
+    fi
+done
+
+if [ "$AUTO_AT_CELSIUS" -ge "$MAX_AT_CELSIUS" ]; then
+    log "AUTO_AT_CELSIUS ($AUTO_AT_CELSIUS) must be lower than MAX_AT_CELSIUS ($MAX_AT_CELSIUS); refusing to start."
+    exit 1
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+    log 'Run this daemon as root.'
+    exit 1
+fi
+
+max_at_millicelsius=$((MAX_AT_CELSIUS * 1000))
+auto_at_millicelsius=$((AUTO_AT_CELSIUS * 1000))
+
+# Prints "<millicelsius> <zone>" for the hottest matching zone, or nothing
+# when no zone gives a plausible reading.
+get_hottest_zone_reading() {
+    local zone_dir zone_type reading hottest_reading='none' hottest_zone='none'
+
+    for zone_dir in /sys/class/thermal/thermal_zone*; do
+        [ -r "$zone_dir/temp" ] || continue
+        zone_type="$(cat "$zone_dir/type" 2>/dev/null || echo unknown)"
+        if [ "$ZONE_TYPE_PATTERN" != 'all' ] &&
+                ! [[ "$zone_type" =~ $ZONE_TYPE_PATTERN ]]; then
+            continue
+        fi
+
+        reading="$(cat "$zone_dir/temp" 2>/dev/null)" || continue
+        case "$reading" in
+            ''|*[!0-9-]*|-*-*|?*-*) continue ;;
+        esac
+        if [ "$reading" -lt "$plausible_min_millicelsius" ] ||
+                [ "$reading" -gt "$plausible_max_millicelsius" ]; then
+            continue
+        fi
+
+        if [ "$hottest_reading" = 'none' ] || [ "$reading" -gt "$hottest_reading" ]; then
+            hottest_reading="$reading"
+            hottest_zone="${zone_dir##*/}($zone_type)"
+        fi
+    done
+
+    if [ "$hottest_reading" != 'none' ]; then
+        printf '%s %s\n' "$hottest_reading" "$hottest_zone"
+    fi
+}
+
+log_zone_inventory() {
+    local zone_dir
+    log "Thermal zones (pattern: $ZONE_TYPE_PATTERN):"
+    for zone_dir in /sys/class/thermal/thermal_zone*; do
+        [ -r "$zone_dir/temp" ] || continue
+        log "  ${zone_dir##*/} type=$(cat "$zone_dir/type" 2>/dev/null || echo unknown) temp=$(cat "$zone_dir/temp" 2>/dev/null || echo unreadable)"
+    done
+}
+
+applied_mode='unknown'
+
+handle_shutdown() {
+    log 'Stopping; systemd ExecStopPost restores auto.'
+    exit 0
+}
+trap handle_shutdown TERM INT
+
+log "Starting: max at >= ${MAX_AT_CELSIUS} C, auto at <= ${AUTO_AT_CELSIUS} C, poll ${POLL_SECONDS}s."
+log_zone_inventory
+
+while true; do
+    zone_reading="$(get_hottest_zone_reading)"
+
+    if [ -z "$zone_reading" ]; then
+        wanted_mode='max'
+        reason='no plausible thermal reading'
+    else
+        temperature="${zone_reading%% *}"
+        zone_name="${zone_reading#* }"
+        reason="$zone_name at $((temperature / 1000)).$(( (temperature % 1000) / 100 )) C"
+
+        if [ "$temperature" -ge "$max_at_millicelsius" ]; then
+            wanted_mode='max'
+        elif [ "$temperature" -le "$auto_at_millicelsius" ]; then
+            wanted_mode='auto'
+        elif [ "$applied_mode" = 'unknown' ]; then
+            # Between thresholds with no known state: below the max line.
+            wanted_mode='auto'
+        else
+            wanted_mode="$applied_mode"
+        fi
+    fi
+
+    if [ "$wanted_mode" != "$applied_mode" ]; then
+        log "Switching to $wanted_mode: $reason"
+        if "$control_command" "$wanted_mode"; then
+            applied_mode="$wanted_mode"
+        else
+            # The EC state is unknown after a failed request; the driver
+            # refuses new requests while its mailbox is not idle.
+            applied_mode='unknown'
+            log "Request for $wanted_mode failed; retrying in ${FAILURE_BACKOFF_SECONDS}s."
+            sleep "$FAILURE_BACKOFF_SECONDS" &
+            wait $!
+            continue
+        fi
+    fi
+
+    sleep "$POLL_SECONDS" &
+    wait $!
+done

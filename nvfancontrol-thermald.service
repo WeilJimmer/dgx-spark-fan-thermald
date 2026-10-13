@@ -1,0 +1,24 @@
+[Unit]
+Description=DGX Spark fan: max above a temperature, EC auto below
+# Requires the nvfancontrol package (/usr/sbin/nvfancontrol).
+ConditionPathExists=/usr/sbin/nvfancontrol
+# The stock unit pins the fan at max; running both would fight.
+Conflicts=nvfancontrol.service
+After=nvfancontrol.service
+
+[Service]
+Type=simple
+Environment=MAX_AT_CELSIUS=80
+Environment=AUTO_AT_CELSIUS=70
+Environment=POLL_SECONDS=2
+Environment=FAILURE_BACKOFF_SECONDS=30
+# Regex on /sys/class/thermal/thermal_zone*/type; "all" uses every zone.
+Environment=ZONE_TYPE_PATTERN=all
+ExecStart=/usr/local/sbin/nvfancontrol-thermald
+# Hand control back to the EC curve when the daemon stops.
+ExecStopPost=-/usr/sbin/nvfancontrol auto
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
