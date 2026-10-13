@@ -15,21 +15,20 @@
 
 ## 安裝（在 DGX Spark 上，照順序整段貼上）
 
-### 0. 把這個資料夾放到 DGX Spark 上
+所有指令都在 **DGX Spark 上**執行。
 
-從你的電腦複製過去（`<spark>` 換成 DGX Spark 的 IP 或主機名稱）：
-
-```bash
-scp -r dgx-spark-fan-thermald <spark>:~/
-```
-
-之後的所有指令都在 **DGX Spark 上**執行。
-
-### 1. 安裝 `nvfancontrol`（風扇控制驅動）
+### 0. 安裝編譯工具並下載這個 repo
 
 ```bash
 sudo apt update
 sudo apt install -y git dkms build-essential linux-headers-$(uname -r)
+cd ~
+git clone https://github.com/WeilJimmer/dgx-spark-fan-thermald.git
+```
+
+### 1. 安裝 `nvfancontrol`（風扇控制驅動）
+
+```bash
 cd ~
 git clone https://github.com/Z841973620/dgx-spark-fan-override.git
 cd dgx-spark-fan-override
